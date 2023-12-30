@@ -80,7 +80,7 @@ aws efs describe-file-systems --query "FileSystems[*].FileSystemId" --output tex
 
 NOTE: The security group of efs, should be given access to 2049 port with vpc cidr.
 
-sgr-0d323a95aeabaec95	IPv4	NFS	TCP	2049	10.209.0.0/16
+sgr-0d323a5	IPv4	NFS	TCP	2049	10.20.0.0/16
 
 
 
