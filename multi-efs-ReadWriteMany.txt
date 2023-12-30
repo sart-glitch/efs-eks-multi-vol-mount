@@ -1,0 +1,177 @@
+
+git clone https://github.com/kubernetes-sigs/aws-efs-csi-driver.git
+
+eksctl create iamserviceaccount \
+    --name efs-csi-controller-sa \
+    --namespace kube-system \
+    --cluster AFPL-Phase-II-Uat \
+    --role-name AmazonEKS_EFS_CSI_DriverRole \
+    --role-only \
+    --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy \
+    --approve
+TRUST_POLICY=$(aws iam get-role --role-name $role_name --query 'Role.AssumeRolePolicyDocument' | \
+    sed -e 's/efs-csi-controller-sa/efs-csi-*/' -e 's/StringEquals/StringLike/')
+	
+	
+aws iam get-role --role-name AmazonEKS_EFS_CSI_DriverRole --query 'Role.AssumeRolePolicyDocument' | sed -e 's/efs-csi-controller-sa/efs-csi-*/'-e 's/StringEquals/StringLike/'
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Federated": "arn:aws:iam::57299:oidc-provider/oidc.eks.ap-south-1.amazonaws.com/id/CD03547F4A4"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+                "StringLike": {
+                    "oidc.eks.ap-south-1.amazonaws.com/id/CD03547F4A4:sub": "system:serviceaccount:kube-system:efs-csi-*",
+                    "oidc.eks.ap-south-1.amazonaws.com/id/CD03547F4A4:aud": "sts.amazonaws.com"
+                }
+            }
+        }
+    ]
+}
+
+put the above thing in trust-policy.json
+
+aws iam update-assume-role-policy --role-name AmazonEKS_EFS_CSI_DriverRole --policy-document "$(cat trust-policy.json)"
+
+--------
+To install the driver using images stored in the private Amazon ECR registry
+
+Download the manifest. Replace release-X.X with your desired branch. We recommend using the latest released version. For a list of active branches, see Branches.
+
+kubectl kustomize \
+    "github.com/kubernetes-sigs/aws-efs-csi-driver/deploy/kubernetes/overlays/stable/ecr/?ref=release-1.7" > private-ecr-driver.yaml
+Note
+If you encounter an issue that you aren't able to resolve by adding IAM permissions, try the Manifest (public registry) steps instead.
+
+In the following command, replace region-code with the AWS Region that your cluster is in. Then run the modified command to replace us-west-2 in the file with your AWS Region.
+
+sed -i.bak -e 's|ap-south-1|region-code|' private-ecr-driver.yaml
+Replace account in the following command with the account from Amazon container image registries for the AWS Region that your cluster is in and then run the modified command to replace 602401143452 in the file.
+
+sed -i.bak -e 's|602401143452|account|' private-ecr-driver.yaml
+If you already created a service account by following Create an IAM policy and role for Amazon EKS, then edit the private-ecr-driver.yaml file. Remove the following lines that create a Kubernetes service account.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/name: aws-efs-csi-driver
+  name: efs-csi-controller-sa
+  namespace: kube-system
+---
+Apply the manifest.
+
+kubectl apply -f private-ecr-driver.yaml
+
+
+--------
+
+
+
+
+cd aws-efs-csi-driver/examples/kubernetes/encryption_in_transit/
+
+aws efs describe-file-systems --query "FileSystems[*].FileSystemId" --output text
+
+NOTE: The security group of efs, should be given access to 2049 port with vpc cidr.
+
+sgr-0d323a95aeabaec95	IPv4	NFS	TCP	2049	10.209.0.0/16
+
+
+
+----
+sc.yaml
+=======
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+
+pv.yaml
+=======
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: efs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-sc
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: fs-238c7f5f
+	
+	
+
+pvc.yaml
+========
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: efs-claim
+  namespace: tih-app
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 5Gi
+
+pod1.yaml
+=========
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app1
+  namespace: tih-app
+spec:
+  containers:
+  - name: app1
+    image: busybox
+    command: ["/bin/sh"]
+    args: ["-c", "while true; do echo $(date -u) >> /data/out1.txt; sleep 5; done"]
+    volumeMounts:
+    - name: persistent-storage
+      mountPath: /data
+  volumes:
+  - name: persistent-storage
+    persistentVolumeClaim:
+      claimName: efs-claim
+	  
+
+pod2.yaml
+=========
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app2
+  namespace: tih-app
+spec:
+  containers:
+  - name: app2
+    image: busybox
+    command: ["/bin/sh"]
+    args: ["-c", "while true; do echo $(date -u) >> /data/out2.txt; sleep 5; done"]
+    volumeMounts:
+    - name: persistent-storage
+      mountPath: /data
+  volumes:
+  - name: persistent-storage
+    persistentVolumeClaim:
+      claimName: efs-claim
+
+
