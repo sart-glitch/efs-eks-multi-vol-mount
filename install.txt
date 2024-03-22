@@ -1,3 +1,5 @@
 eksctl utils associate-iam-oidc-provider --region=ap-south-1 --cluster Staging --approve
 
 eksctl create iamserviceaccount     --name efs-csi-controller-sa     --namespace kube-system     --cluster Staging     --role-name AmazonEKS_EFS_CSI_DriverRole     --role-only     --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy --region ap-south-1     --approve
+
+https://github.com/kubernetes-sigs/aws-efs-csi-driver/blob/master/docs/README.md#installation
